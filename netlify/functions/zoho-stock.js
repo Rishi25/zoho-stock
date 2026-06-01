@@ -20,7 +20,7 @@ async function fetchZohoCsv() {
 
   // Zoho public report CSV export endpoint
   // Adding /csv to the open-view URL triggers a direct CSV download
-  const url = `https://analytics.zoho.com/open-view/${viewId}/csv`;
+  const url = `https://analytics.zoho.com/open-view/1908942000009542263?exportType=csv&fileFormat=csv&isAggr=true`;
 
   const response = await fetch(url, {
     headers: {
