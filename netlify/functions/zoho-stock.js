@@ -1,82 +1,66 @@
-const COL_SKU = "SKU";
-const CITIES = ["Ahmedabad", "Chandigarh"];
+// netlify/functions/zoho-stock.js
+//
+// Fetches stock data from a Zoho Analytics PUBLIC report URL.
+// No OAuth, no org ID — just the public share link.
+//
+// Zoho public report CSV export URL format:
+//   https://analytics.zoho.com/open-view/{VIEW_ID}/csv
+//
+// ENV vars needed (set in Netlify → Site → Environment variables):
+//   ZOHO_VIEW_ID   — the number from your share URL (e.g. 1908942000009542263)
+//                    OR leave blank to use DEFAULT_VIEW_ID below
+
+const COL_SKU  = "SKU";
+const CITIES   = ["Ahmedabad", "Chandigarh"];
 const DEFAULT_VIEW_ID = "1908942000009542263";
 
-async function getZohoAccessToken() {
-  const clientId = process.env.ZOHO_CLIENT_ID;
-  const clientSecret = process.env.ZOHO_CLIENT_SECRET;
-  const refreshToken = process.env.ZOHO_REFRESH_TOKEN;
-
-  if (!clientId || !clientSecret || !refreshToken) {
-    throw new Error(
-      "Missing Zoho OAuth env vars. Set ZOHO_CLIENT_ID, ZOHO_CLIENT_SECRET, and ZOHO_REFRESH_TOKEN in Netlify."
-    );
-  }
-
-  const accountsHost = process.env.ZOHO_ACCOUNTS_HOST || "accounts.zoho.com";
-  const params = new URLSearchParams({
-    refresh_token: refreshToken,
-    client_id: clientId,
-    client_secret: clientSecret,
-    grant_type: "refresh_token",
-  });
-
-  const response = await fetch(`https://${accountsHost}/oauth/v2/token?${params}`, {
-    method: "POST",
-  });
-  const data = await response.json();
-
-  if (!data.access_token) {
-    throw new Error(data.error || "Failed to refresh Zoho access token");
-  }
-
-  return data.access_token;
-}
-
+// ── Fetch CSV from Zoho public report ────────────────────────────────────────
 async function fetchZohoCsv() {
-  const orgId = process.env.ZOHO_ORG_ID;
-  const workspaceId = process.env.ZOHO_WORKSPACE_ID;
   const viewId = process.env.ZOHO_VIEW_ID || DEFAULT_VIEW_ID;
 
-  if (!orgId || !workspaceId) {
-    throw new Error(
-      "Missing Zoho Analytics env vars. Set ZOHO_ORG_ID and ZOHO_WORKSPACE_ID in Netlify."
-    );
-  }
-
-  const accessToken = await getZohoAccessToken();
-  const config = encodeURIComponent(JSON.stringify({ responseFormat: "csv" }));
-  const apiHost = process.env.ZOHO_ANALYTICS_HOST || "analyticsapi.zoho.com";
-  const url = `https://${apiHost}/restapi/v2/workspaces/${workspaceId}/views/${viewId}/data?CONFIG=${config}`;
+  // Zoho public report CSV export endpoint
+  // Adding /csv to the open-view URL triggers a direct CSV download
+  const url = `https://analytics.zoho.com/open-view/${viewId}/csv`;
 
   const response = await fetch(url, {
     headers: {
-      Authorization: `Zoho-oauthtoken ${accessToken}`,
-      ZANALYTICS-ORGID: orgId,
+      // Mimic a browser request — Zoho occasionally blocks non-browser agents
+      "User-Agent": "Mozilla/5.0 (compatible; StockSync/1.0)",
+      "Accept": "text/csv, text/plain, */*",
     },
   });
 
-  const csvText = await response.text();
+  const text = await response.text();
 
   if (!response.ok) {
-    throw new Error(`Zoho Analytics API error (${response.status}): ${csvText.slice(0, 200)}`);
+    throw new Error(`Zoho public report error (${response.status}): ${text.slice(0, 200)}`);
+  }
+  if (text.toLowerCase().includes("<html")) {
+    throw new Error(
+      "Zoho returned an HTML page instead of CSV. " +
+      "Check that the report is publicly shared: " +
+      "Zoho Analytics → Share → Publish → Enable public access."
+    );
   }
 
-  if (csvText.toLowerCase().includes("<html")) {
-    throw new Error("Zoho returned HTML instead of CSV");
-  }
-
-  return csvText;
+  return text;
 }
 
+// ── CSV parser ────────────────────────────────────────────────────────────────
+// Handles quoted fields, BOM, CRLF
 function parseCsv(csvText) {
-  return csvText.trim().split(/\r?\n/).map((row) =>
-    row.split(",").map((cell) =>
-      cell.replace(/^\uFEFF/, "").replace(/^"|"$/g, "").trim()
-    )
-  );
+  return csvText
+    .replace(/^\uFEFF/, "")   // strip BOM
+    .trim()
+    .split(/\r?\n/)
+    .map((row) =>
+      row.split(",").map((cell) =>
+        cell.replace(/^"|"$/g, "").trim()
+      )
+    );
 }
 
+// ── Netlify handler ───────────────────────────────────────────────────────────
 exports.handler = async (event) => {
   const sku = String(event.queryStringParameters?.sku || "").trim().toUpperCase();
 
@@ -102,26 +86,31 @@ exports.handler = async (event) => {
   try {
     const rows = parseCsv(await fetchZohoCsv());
     const csvHeaders = rows[0];
-    const skuIndex = csvHeaders.indexOf(COL_SKU);
 
+    const skuIndex = csvHeaders.indexOf(COL_SKU);
     if (skuIndex === -1) {
-      throw new Error(`CSV is missing required column: ${COL_SKU}`);
+      throw new Error(
+        `CSV missing column "${COL_SKU}". ` +
+        `Found columns: ${csvHeaders.join(", ")}`
+      );
     }
 
+    // Find all rows matching this SKU
     const matchingRows = rows.filter(
-      (row, index) =>
-        index > 0 &&
+      (row, i) =>
+        i > 0 &&
         String(row[skuIndex] || "").trim().toUpperCase() === sku
     );
 
+    // Build per-city availability
     const cities = {};
-
     CITIES.forEach((city) => {
       const cityIndex = csvHeaders.indexOf(city);
       cities[city] =
         cityIndex !== -1 &&
         matchingRows.some(
-          (row) => String(row[cityIndex] || "").trim().toLowerCase() === "available"
+          (row) =>
+            String(row[cityIndex] || "").trim().toLowerCase() === "available"
         );
     });
 
@@ -130,6 +119,7 @@ exports.handler = async (event) => {
       headers,
       body: JSON.stringify({ sku, cities }),
     };
+
   } catch (error) {
     return {
       statusCode: 500,
