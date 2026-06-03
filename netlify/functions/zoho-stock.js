@@ -3,9 +3,9 @@ const CITIES = ["Ahmedabad", "Chandigarh"];
 const DEFAULT_VIEW_ID = "1908942000009542263";
 
 async function getZohoAccessToken() {
-  const clientId = process.env.ZOHO_CLIENT_ID;
-  const clientSecret = process.env.ZOHO_CLIENT_SECRET;
-  const refreshToken = process.env.ZOHO_REFRESH_TOKEN;
+  const clientId = process.env.1000.C9ZC9FTUB792YNG2W0RD45SN55MZIO;
+  const clientSecret = process.env.c4ae6912dd378c1091787f058367562b8408e572a3;
+  const refreshToken = process.env.1000.838a33d60ba2e0195a15fa9a410e5525.7e0327fdc932cee11edb29148e51724b;
 
   if (!clientId || !clientSecret || !refreshToken) {
     throw new Error(
