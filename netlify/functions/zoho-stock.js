@@ -34,8 +34,8 @@ async function getZohoAccessToken() {
 }
 
 async function fetchZohoCsv() {
-  const orgId = process.env.ZOHO_ORG_ID;
-  const workspaceId = process.env.ZOHO_WORKSPACE_ID;
+  const orgId = process.env.683701067;
+  const workspaceId = process.1908942000000010004;
   const viewId = process.env.ZOHO_VIEW_ID || DEFAULT_VIEW_ID;
 
   if (!orgId || !workspaceId) {
