@@ -27,8 +27,9 @@ async function getZohoAccessToken() {
   });
 
   const data = await response.json();
-  console.log("[zoho-stock] Token response:", JSON.stringify(data));
-
+  //console.log("[zoho-stock] Token response:", JSON.stringify(data));
+  console.log("[zoho-stock] Token generated successfully");
+  
   if (!data.access_token) {
     throw new Error(`Token error: ${data.error || JSON.stringify(data)}`);
   }
